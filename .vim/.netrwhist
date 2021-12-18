@@ -1,0 +1,6 @@
+let g:netrw_dirhistmax  =10
+let g:netrw_dirhist_cnt =4
+let g:netrw_dirhist_1='/home/os2021/os21team61/NachOS-4.0_MP1/code/build.linux'
+let g:netrw_dirhist_2='/home/os2021/os21team61/NachOS-4.0_MP1/code/test'
+let g:netrw_dirhist_3='/home/os2021/os21team61/NachOS-4.0_MP1/code/filesys'
+let g:netrw_dirhist_4='/home/os2021/os21team61/NachOS-4.0_MP1'
