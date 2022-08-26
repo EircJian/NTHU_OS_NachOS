@@ -37,10 +37,11 @@ Thread::Thread(char* threadName, int threadID)
 {
 	ID = threadID;
     name = threadName;
-    priority = 149;
+    priority = 0;
     burstTime = 0; // t0 = 0
     burstStartTime = 0;
     usedTime = 0;
+    accumulatedUsedTime = 0;
     waitedTime = 0;
     waitStartTime = 0;
     stackTop = NULL;
@@ -62,6 +63,7 @@ Thread::Thread(char* threadName, int threadID, int p)
     burstTime = 0; // t0 = 0
     burstStartTime = 0;
     usedTime = 0;
+    accumulatedUsedTime = 0;
     waitedTime = 0;
     waitStartTime = 0;
     stackTop = NULL;
@@ -123,19 +125,43 @@ Thread::setWaitedTime(int p)
     waitedTime = p;
 }
 
+double 
+Thread::getAccumulatedUsedTime()
+{
+    return accumulatedUsedTime;
+}
+
+void
+Thread::setAccumulatedUsedTime(double p)
+{
+    accumulatedUsedTime = p;
+}
+
 bool
 Thread::aging(int ageTime)
 {
-    this->waitedTime += ageTime;
+    this->setWaitedTime(ageTime);
+    //cout << "Thread" << this->getID() << " waitStartTime: " << this->waitStartTime << "\n";
+    //cout << "Thread" << this->getID() << " waitedTime: " << this->waitedTime << "\n";
+    //this->waitedTime += ageTime;
     
     if(this->waitedTime < 1500) {
         return FALSE;
     }
     
+    this->waitStartTime = kernel->stats->totalTicks;
     int oldPriority = this->priority;
     int newPriority = oldPriority + (this->waitedTime/1500) * 10;
-    this->waitedTime %= 1500;
-    this->priority = (newPriority > 149 ? 149 : newPriority);
+    newPriority = (newPriority > 149 ? 149 : newPriority);
+    
+    if(newPriority != oldPriority) {
+        //cout << 
+        DEBUG(dbgScheduler, "[C] Tick [" << kernel->stats->totalTicks << "]: Thread [" << this->getID()
+                                     << "] changes its priority from [" << oldPriority << "] to [" 
+                                     << newPriority << "]");
+        this->setWaitedTime(this->waitedTime%1500);
+        this->priority = newPriority;
+    }
     
     if((oldPriority < 100 && newPriority >= 100) || (oldPriority < 50 && newPriority >= 50)) {
         return TRUE;
@@ -301,16 +327,18 @@ Thread::Yield ()
     ASSERT(this == kernel->currentThread);
     
     DEBUG(dbgThread, "Yielding thread: " << name);
+
+    // MP3: running-->ready, update used burst time but not approximate CPU burst time
+    kernel->scheduler->ReadyToRun(this);
+    double totalUsedTime = this->usedTime + (kernel->stats->userTicks - this->burstStartTime);
+    this->setAccumulatedUsedTime(this->getAccumulatedUsedTime() + (kernel->stats->userTicks - this->burstStartTime));
+    this->setUsedTime(totalUsedTime);
     
+    this->waitStartTime = kernel->stats->totalTicks;
     nextThread = kernel->scheduler->FindNextToRun();
-    if (nextThread != NULL) { // MP3: running-->ready, update used burst time but not approximate CPU burst time
-        kernel->scheduler->ReadyToRun(this);
-
+    if (nextThread != NULL) {
+        
         kernel->scheduler->Run(nextThread, FALSE);
-        double totalUsedTime = this->usedTime + (kernel->stats->userTicks - this->burstStartTime);
-        this->setUsedTime(totalUsedTime);
-
-        this->waitStartTime = kernel->stats->userTicks;
     }
     (void) kernel->interrupt->SetLevel(oldLevel);
 }
@@ -346,16 +374,21 @@ Thread::Sleep (bool finishing)
     DEBUG(dbgThread, "Sleeping thread: " << name);
     DEBUG(dbgTraCode, "In Thread::Sleep, Sleeping thread: " << name << ", " << kernel->stats->totalTicks);
 
-    if(!finishing) { // MP3: running --> waiting, update CPU burst time by the approximation formula 
+    this->setAccumulatedUsedTime(this->getAccumulatedUsedTime() + (kernel->stats->userTicks - this->burstStartTime));
+    if(!finishing && this->usedTime != 0) { // MP3: running --> waiting, update CPU burst time by the approximation formula 
                      // and zero out the used burst time cuz this CPU burst is over
                      // waiting for the next CPU burst
         //double totalUsedTime = this->usedTime + (kernel->stats->userTicks - this->burstStartTime);
         //this->setUsedTime(totalUsedTime);
-        this->setUsedTime(0);
         double oldThreadNewBurstTime = 0.5 * this->burstTime + 0.5 * this->usedTime;
+        
+        DEBUG(dbgScheduler, "[D] Tick [" << kernel->stats->totalTicks << "]: Thread [" << this->getID()
+                                 << "] update approximate burst time, from: [" << this->burstTime 
+                                 << "], add [" << this->usedTime  << "], to [" << oldThreadNewBurstTime << "]");
+        this->setUsedTime(0);
         this->setBurstTime(oldThreadNewBurstTime);
     }
-    
+
     status = BLOCKED;
 	//cout << "debug Thread::Sleep " << name << "wait for Idle\n";
     while ((nextThread = kernel->scheduler->FindNextToRun()) == NULL) {

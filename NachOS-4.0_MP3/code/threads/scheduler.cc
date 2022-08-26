@@ -87,29 +87,21 @@ Scheduler::ReadyToRun (Thread *thread)
     // MP3: put thread into ready lists(L1, L2, L3)
 
     Thread *oldThread = kernel->currentThread;
-    double oldUsedTime_tmp = oldThread->getUsedTime() + (kernel->stats->userTicks - oldThread->burstStartTime);
+    //double oldUsedTime_tmp = oldThread->getUsedTime() + (kernel->stats->userTicks - oldThread->burstStartTime);
     
     if(thread->getPriority() >= 100) {
+        DEBUG(dbgScheduler, "[A] Tick [" << kernel->stats->totalTicks << "]: Thread [" << thread->getID()
+                                     << "] is inserted into queue L[1]");
         readyList_L1->Insert(thread);
-        
-        if(oldThread->getPriority() >= 100 && oldThread->getBurstTime() - oldUsedTime_tmp > thread->getBurstTime() - thread->getUsedTime()) {
-            //oldThread->setUsedTime(oldUsedTime_tmp);
-            //oldThread->Yield();
-        }
-        else if(oldThread->getPriority() < 100) {
-            //oldThread->setUsedTime(oldUsedTime_tmp);
-            //oldThread->Yield();
-        }
     }
     else if(thread->getPriority() >= 50) {
+        DEBUG(dbgScheduler, "[A] Tick [" << kernel->stats->totalTicks << "]: Thread [" << thread->getID()
+                                     << "] is inserted into queue L[2]");
         readyList_L2->Insert(thread);
-
-        if(oldThread->getPriority() < 50){
-            //oldThread->setUsedTime(oldUsedTime_tmp);
-            //oldThread->Yield();
-        }
     }
     else {
+        DEBUG(dbgScheduler, "[A] Tick [" << kernel->stats->totalTicks << "]: Thread [" << thread->getID()
+                                     << "] is inserted into queue L[3]");
         readyList_L3->Append(thread);
     }
     // 做完應該要把interrupt enable回來, 這裡沒做可能是在caller那邊才做?
@@ -130,12 +122,21 @@ Scheduler::FindNextToRun ()
 
 
     if (!readyList_L1->IsEmpty()) {
-		return readyList_L1->RemoveFront();
+        Thread *thread = readyList_L1->Front();
+		DEBUG(dbgScheduler, "[B] Tick [" << kernel->stats->totalTicks << "]: Thread [" << thread->getID()
+                                     << "] is removed from queue L[1]");
+        return readyList_L1->RemoveFront();
     }
     else if (!readyList_L2->IsEmpty()) {
+        Thread *thread = readyList_L2->Front();
+        DEBUG(dbgScheduler, "[B] Tick [" << kernel->stats->totalTicks << "]: Thread [" << thread->getID()
+                                     << "] is removed from queue L[2]");
 		return readyList_L2->RemoveFront();
     }
     else if (!readyList_L3->IsEmpty()) {
+        Thread *thread = readyList_L3->Front();
+        DEBUG(dbgScheduler, "[B] Tick [" << kernel->stats->totalTicks << "]: Thread [" << thread->getID()
+                                     << "] is removed from queue L[3]");
 		return readyList_L3->RemoveFront();
     }
     else {
@@ -181,15 +182,26 @@ Scheduler::Run (Thread *nextThread, bool finishing)
     
     oldThread->CheckOverflow();		    // check if the old thread
 					    // had an undetected stack overflow
-
-    kernel->currentThread = nextThread;  // switch to the next thread
-    nextThread->setStatus(RUNNING);      // nextThread is now running
-    nextThread->burstStartTime = kernel->stats->userTicks;
-    nextThread->waitStartTime = 0;
-    nextThread->setWaitedTime(0);
     
+    int oldID = oldThread->getID();
+    double oldUsedTime = oldThread->getAccumulatedUsedTime();
     DEBUG(dbgThread, "Switching from: " << oldThread->getName() << " to: " << nextThread->getName());
     
+    DEBUG(dbgScheduler, "[E] Tick [" << kernel->stats->totalTicks << "]: Thread [" << nextThread->getID()
+                                 << "] is now selected for execution, thread [" << oldID 
+                                 << "] is replaced, and it has executed [" << oldUsedTime << "] ticks");
+    
+    kernel->currentThread = nextThread;  // switch to the next thread
+    nextThread->setStatus(RUNNING);      // nextThread is now running
+    //if(nextThread != oldThread){
+
+    //}
+    nextThread->burstStartTime = kernel->stats->userTicks;
+    //nextThread->waitStartTime = 0;
+    nextThread->setWaitedTime(0);
+    
+    
+
     // This is a machine-dependent assembly language routine defined 
     // in switch.s.  You may have to think
     // a bit to figure out what happens after this, both from the point
@@ -259,39 +271,66 @@ Scheduler::updateThreadPriority()
     ListIterator<Thread *> iter1(this->readyList_L1);
 
 	for (; !iter1.IsDone(); iter1.Next()) {
-	    iter1.Item()->aging(kernel->stats->userTicks - iter1.Item()->waitStartTime);
-        tmpList_L1->Insert(iter1.Item());
+	    iter1.Item()->aging(kernel->stats->totalTicks - iter1.Item()->waitStartTime);
+        //tmpList_L1->Insert(iter1.Item());
+        //iter1.Item()->setWaitedTime(iter1.Item()->getWaitedTime() % 1500);
     }
-    readyList_L1 = tmpList_L1;
-    delete tmp1;
+    //readyList_L1 = tmpList_L1;
+    //delete tmp1;
 
     ListIterator<Thread *> iter2(this->readyList_L2);
     //ListIterator<Thread *> *tmp = iter2;
 	for (; !iter2.IsDone(); iter2.Next()) {
-	    bool upgrade = iter2.Item()->aging(kernel->stats->userTicks - iter2.Item()->waitStartTime);
+	    bool upgrade = iter2.Item()->aging(kernel->stats->totalTicks - iter2.Item()->waitStartTime);
         if(upgrade) {
-            tmpList_L1->Insert(iter2.Item());
+            if(iter2.Item()->getID() > 0) {
+                
+                DEBUG(dbgScheduler, "[B] Tick [" << kernel->stats->totalTicks << "]: Thread [" << iter2.Item()->getID()
+                                             << "] is removed from queue L[1]");
+                /*
+                DEBUG(dbgScheduler, "[A] Tick [" << kernel->stats->totalTicks << "]: Thread [" << iter2.Item()->getID()
+                                             << "] is inserted into queue L[2]");
+                tmpList_L1->Insert(iter2.Item());
+                */
+                readyList_L2->Remove(iter2.Item());
+                kernel->scheduler->ReadyToRun(iter2.Item());
+            }
+            
         }
         else {
             tmpList_L2->Insert(iter2.Item());
         }
+        //iter2.Item()->setWaitedTime(iter2.Item()->getWaitedTime() % 1500);
     }
-    readyList_L2 = tmpList_L2;
-    delete tmp2;
+    //readyList_L2 = tmpList_L2;
+    //delete tmp2;
 
     ListIterator<Thread *> iter3(this->readyList_L3);
 
 	for (; !iter3.IsDone(); iter3.Next()) {
-	    bool upgrade = iter3.Item()->aging(kernel->stats->userTicks - iter3.Item()->waitStartTime);
+	    bool upgrade = iter3.Item()->aging(kernel->stats->totalTicks - iter3.Item()->waitStartTime);
         if(upgrade) {
-            tmpList_L2->Insert(iter3.Item());
+            if(iter3.Item()->getID() > 0) {
+                
+                DEBUG(dbgScheduler, "[B] Tick [" << kernel->stats->totalTicks << "]: Thread [" << iter3.Item()->getID()
+                                             << "] is removed from queue L[2]");
+                /*
+                DEBUG(dbgScheduler, "[A] Tick [" << kernel->stats->totalTicks << "]: Thread [" << iter3.Item()->getID()
+                                             << "] is inserted into queue L[3]");
+                tmpList_L2->Insert(iter3.Item());  
+                */
+                readyList_L3->Remove(iter3.Item());
+                kernel->scheduler->ReadyToRun(iter3.Item());
+            }
+            
         }
         else {
             tmpList_L3->Append(iter3.Item());
         }
+        //iter3.Item()->setWaitedTime(iter3.Item()->getWaitedTime() % 1500);
     }
-    readyList_L3 = tmpList_L3;
-    delete tmp3;
+    //readyList_L3 = tmpList_L3;
+    //delete tmp3;
 
     //cout << "out Scheduler::updateThreadPriority" << '\n';
 }

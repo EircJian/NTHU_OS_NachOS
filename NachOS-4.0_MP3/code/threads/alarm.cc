@@ -48,14 +48,18 @@ Alarm::CallBack()
 {
     Interrupt *interrupt = kernel->interrupt;
     MachineStatus status = interrupt->getStatus();
+    Scheduler *scheduler = kernel->scheduler;
+    // MP3: update priority if necessary
+    scheduler->updateThreadPriority();
     
-    // MP3: update priority id necessary
-    kernel->scheduler->updateThreadPriority();
 
-    if(kernel->currentThread->getPriority() < 50 || kernel->currentThread->getPriority() >= 100) {
-        // MP3: only threads in L3 are controlled by timer
+    if(kernel->currentThread->getPriority() < 50/* || kernel->currentThread->getPriority() >= 100*/ || !scheduler->isL1Empty()) {
+        // MP3: only the situations where threads in L3 or L1 is not empty are controlled by timer
         if (status != IdleMode) {
             interrupt->YieldOnReturn();
         }
+    }
+    else {
+        kernel->currentThread->waitStartTime = kernel->stats->totalTicks;
     }
 }

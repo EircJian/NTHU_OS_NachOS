@@ -37,7 +37,7 @@ class Scheduler {
     void updateThreadPriority(); // MP3: update thread priority
     //void checkReadyList(); // MP3: adjust the belonging readyList of
                            // the thread whose priority has been updated
-    
+    bool isL1Empty(){ return readyList_L1->IsEmpty(); }
   private:
     SortedList<Thread *> *readyList_L1, *readyList_L2;
     List<Thread *> *readyList_L3;  // MP3: queues of threads that are ready to run,

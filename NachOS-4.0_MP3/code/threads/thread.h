@@ -121,6 +121,9 @@ class Thread {
   int getWaitedTime();
   void setWaitedTime(int p);
 
+  double getAccumulatedUsedTime();
+  void setAccumulatedUsedTime(double p);
+
   bool aging(int ageTime);
 
   private:
@@ -135,7 +138,7 @@ class Thread {
 
     // MP3
     int priority;
-    double burstTime, usedTime;
+    double burstTime, usedTime, accumulatedUsedTime;
     int waitedTime;
 
     void StackAllocate(VoidFunctionPtr func, void *arg);

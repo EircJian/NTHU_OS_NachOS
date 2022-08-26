@@ -31,6 +31,7 @@ Kernel::Kernel(int argc, char **argv)
     priorityFlag = FALSE;
     consoleIn = NULL;          // default is stdin
     consoleOut = NULL;         // default is stdout
+    
 #ifndef FILESYS_STUB
     formatFlag = FALSE;
 #endif
